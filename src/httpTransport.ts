@@ -17,6 +17,43 @@ function headerSessionId(req: IncomingMessage): string | undefined {
   return undefined;
 }
 
+/** Express usually parses JSON; keep a fallback when body arrives as a string. */
+function normalizeMcpPostBody(body: unknown): unknown {
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body) as unknown;
+    } catch {
+      return body;
+    }
+  }
+  return body;
+}
+
+function setIncomingSessionHeader(req: IncomingMessage, sessionId: string): void {
+  req.headers["mcp-session-id"] = sessionId;
+
+  const rh = req.rawHeaders;
+  const headerName = "mcp-session-id";
+  for (let i = 0; i < rh.length; i += 2) {
+    const key = rh[i];
+    if (typeof key === "string" && key.toLowerCase() === headerName) {
+      rh[i + 1] = sessionId;
+      return;
+    }
+  }
+  rh.unshift(headerName, sessionId);
+}
+
+/**
+ * When false (default), a single active Streamable HTTP session is reused even if the client
+ * omits `mcp-session-id` or sends a stale ID — fixes Cursor and similar clients that drop
+ * or cache the wrong header while JSON response mode is enabled.
+ */
+function useStrictSessionRouting(): boolean {
+  const v = process.env["MCP_HTTP_STRICT_SESSIONS"]?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 /** Detect MCP initialize in a POST body (single JSON-RPC message or batch array). */
 export function requestBodyContainsInitialize(body: unknown): boolean {
   if (Array.isArray(body)) {
@@ -59,8 +96,24 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
 
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
+  const disposeAllTransports = async (): Promise<void> => {
+    const ids = Object.keys(transports);
+    for (const id of ids) {
+      const tr = transports[id];
+      if (tr !== undefined) {
+        try {
+          await tr.close();
+        } catch {
+          /* ignore */
+        }
+        Reflect.deleteProperty(transports, id);
+      }
+    }
+  };
+
   const mcpPostHandler = async (req: Request, res: Response): Promise<void> => {
     const sessionId = headerSessionId(req);
+    const parsedBody = normalizeMcpPostBody(req.body);
     const existingTransport =
       sessionId !== undefined && transports[sessionId] !== undefined
         ? transports[sessionId]
@@ -68,15 +121,17 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
 
     try {
       if (existingTransport !== undefined) {
-        await existingTransport.handleRequest(req, res, req.body);
+        await existingTransport.handleRequest(req, res, parsedBody);
         return;
       }
 
       if (
-        typeof req.body === "object" &&
-        req.body !== null &&
-        requestBodyContainsInitialize(req.body)
+        typeof parsedBody === "object" &&
+        parsedBody !== null &&
+        requestBodyContainsInitialize(parsedBody)
       ) {
+        await disposeAllTransports();
+
         const jsonMode = useJsonResponseMode();
         const activeTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
@@ -92,8 +147,28 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
 
         const mcp = createHubstaffMcpServer(version, client);
         await mcp.connect(activeTransport);
-        await activeTransport.handleRequest(req, res, req.body);
+        await activeTransport.handleRequest(req, res, parsedBody);
         return;
+      }
+
+      if (!useStrictSessionRouting()) {
+        const ids = Object.keys(transports);
+        if (
+          ids.length === 1 &&
+          typeof parsedBody === "object" &&
+          parsedBody !== null &&
+          !requestBodyContainsInitialize(parsedBody)
+        ) {
+          const soleSessionKey = ids[0];
+          if (soleSessionKey !== undefined) {
+            const onlyTransport = transports[soleSessionKey];
+            if (onlyTransport !== undefined) {
+              setIncomingSessionHeader(req, soleSessionKey);
+              await onlyTransport.handleRequest(req, res, parsedBody);
+              return;
+            }
+          }
+        }
       }
 
       res.status(400).json({
@@ -143,20 +218,7 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
   app.get("/mcp", mcpGetHandler);
   app.delete("/mcp", mcpDeleteHandler);
 
-  const closeAllSessions = async (): Promise<void> => {
-    const ids = Object.keys(transports);
-    for (const id of ids) {
-      const tr = transports[id];
-      if (tr !== undefined) {
-        try {
-          await tr.close();
-        } catch {
-          /* ignore */
-        }
-        Reflect.deleteProperty(transports, id);
-      }
-    }
-  };
+  const closeAllSessions = disposeAllTransports;
 
   return { app, closeAllSessions };
 }

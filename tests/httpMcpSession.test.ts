@@ -21,6 +21,7 @@ function stubHubstaffClient(): HubstaffClient {
 describe("Streamable HTTP MCP session reuse", () => {
   const prevJson = process.env["MCP_HTTP_JSON_RESPONSE"];
   const prevHost = process.env["MCP_HTTP_HOST"];
+  const prevStrict = process.env["MCP_HTTP_STRICT_SESSIONS"];
 
   beforeEach(() => {
     process.env["MCP_HTTP_HOST"] = "127.0.0.1";
@@ -36,6 +37,11 @@ describe("Streamable HTTP MCP session reuse", () => {
       Reflect.deleteProperty(process.env, "MCP_HTTP_HOST");
     } else {
       process.env["MCP_HTTP_HOST"] = prevHost;
+    }
+    if (prevStrict === undefined) {
+      Reflect.deleteProperty(process.env, "MCP_HTTP_STRICT_SESSIONS");
+    } else {
+      process.env["MCP_HTTP_STRICT_SESSIONS"] = prevStrict;
     }
   });
 
@@ -118,6 +124,223 @@ describe("Streamable HTTP MCP session reuse", () => {
         expect(listBody.error, JSON.stringify(listBody)).toBeUndefined();
         expect(Array.isArray(listBody.result?.tools)).toBe(true);
       }
+    } finally {
+      await closeAllSessions();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  });
+
+  it("accepts tools/list without mcp-session-id when exactly one session exists (single-session fallback)", async () => {
+    Reflect.deleteProperty(process.env, "MCP_HTTP_JSON_RESPONSE");
+
+    const { app, closeAllSessions } = createHubstaffHttpApp(stubHubstaffClient(), "0.0.0-test");
+
+    const server = await new Promise<Server>((resolve, reject) => {
+      const s = app.listen(0, "127.0.0.1", () => {
+        resolve(s);
+      });
+      s.on("error", reject);
+    });
+
+    const port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${String(port)}`;
+
+    try {
+      const initRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "vitest", version: "0" },
+          },
+          id: 1,
+        }),
+      });
+
+      expect(initRes.ok).toBe(true);
+      const initBody = (await initRes.json()) as {
+        result: { protocolVersion: string };
+      };
+      const protocolVersion = initBody.result.protocolVersion;
+
+      const listRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+          "mcp-protocol-version": protocolVersion,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "tools/list",
+          id: 2,
+        }),
+      });
+
+      expect(listRes.ok).toBe(true);
+      const listBody = (await listRes.json()) as { result?: { tools: unknown[] }; error?: unknown };
+      expect(listBody.error).toBeUndefined();
+      expect(Array.isArray(listBody.result?.tools)).toBe(true);
+    } finally {
+      await closeAllSessions();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  });
+
+  it("accepts tools/list with a stale mcp-session-id when exactly one session exists", async () => {
+    Reflect.deleteProperty(process.env, "MCP_HTTP_JSON_RESPONSE");
+
+    const { app, closeAllSessions } = createHubstaffHttpApp(stubHubstaffClient(), "0.0.0-test");
+
+    const server = await new Promise<Server>((resolve, reject) => {
+      const s = app.listen(0, "127.0.0.1", () => {
+        resolve(s);
+      });
+      s.on("error", reject);
+    });
+
+    const port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${String(port)}`;
+
+    try {
+      const initRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "vitest", version: "0" },
+          },
+          id: 1,
+        }),
+      });
+
+      expect(initRes.ok).toBe(true);
+      const initBody = (await initRes.json()) as {
+        result: { protocolVersion: string };
+      };
+      const protocolVersion = initBody.result.protocolVersion;
+
+      const listRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+          "mcp-session-id": "00000000-0000-4000-8000-000000000000",
+          "mcp-protocol-version": protocolVersion,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "tools/list",
+          id: 2,
+        }),
+      });
+
+      expect(listRes.ok).toBe(true);
+      const listBody = (await listRes.json()) as { result?: { tools: unknown[] }; error?: unknown };
+      expect(listBody.error).toBeUndefined();
+      expect(Array.isArray(listBody.result?.tools)).toBe(true);
+    } finally {
+      await closeAllSessions();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  });
+
+  it("rejects tools/list without session header when MCP_HTTP_STRICT_SESSIONS is enabled", async () => {
+    Reflect.deleteProperty(process.env, "MCP_HTTP_JSON_RESPONSE");
+    process.env["MCP_HTTP_STRICT_SESSIONS"] = "1";
+
+    const { app, closeAllSessions } = createHubstaffHttpApp(stubHubstaffClient(), "0.0.0-test");
+
+    const server = await new Promise<Server>((resolve, reject) => {
+      const s = app.listen(0, "127.0.0.1", () => {
+        resolve(s);
+      });
+      s.on("error", reject);
+    });
+
+    const port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${String(port)}`;
+
+    try {
+      const initRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "vitest", version: "0" },
+          },
+          id: 1,
+        }),
+      });
+
+      expect(initRes.ok).toBe(true);
+      const initBody = (await initRes.json()) as {
+        result: { protocolVersion: string };
+      };
+      const protocolVersion = initBody.result.protocolVersion;
+
+      const listRes = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Accept: MCP_ACCEPT,
+          "Content-Type": "application/json",
+          "mcp-protocol-version": protocolVersion,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "tools/list",
+          id: 2,
+        }),
+      });
+
+      expect(listRes.ok).toBe(false);
+      const errBody = (await listRes.json()) as { error?: { message?: string } };
+      expect(errBody.error?.message).toContain("No valid session ID provided");
     } finally {
       await closeAllSessions();
       await new Promise<void>((resolve, reject) => {
