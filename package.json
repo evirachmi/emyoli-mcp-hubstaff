@@ -34,12 +34,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/befaster/mcp-hubstaff.git"
+    "url": "git+https://github.com/evirachmi/emyoli-mcp-hubstaff.git"
   },
   "bugs": {
-    "url": "https://github.com/befaster/mcp-hubstaff/issues"
+    "url": "https://github.com/evirachmi/emyoli-mcp-hubstaff/issues"
   },
-  "homepage": "https://github.com/befaster/mcp-hubstaff#readme",
+  "homepage": "https://github.com/evirachmi/emyoli-mcp-hubstaff#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^3.24.4"

@@ -1,6 +1,6 @@
 # mcp-hubstaff
 
-[![CI](https://github.com/befaster/mcp-hubstaff/actions/workflows/ci.yml/badge.svg)](https://github.com/befaster/mcp-hubstaff/actions/workflows/ci.yml)
+[![CI](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml/badge.svg)](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml)
 
 A small [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes **read-only** access to the [Hubstaff API v2](https://developer.hubstaff.com/docs/hubstaff_v2). Use it from Cursor, Claude Desktop, or any MCP-capable client to query organizations, projects, members, activities, and related reporting data.
 
@@ -47,8 +47,8 @@ Do **not** combine `HUBSTAFF_PERSONAL_ACCESS_TOKEN` with `HUBSTAFF_CLIENT_ID` / 
 ### 3. Install and build
 
 ```bash
-git clone https://github.com/befaster/mcp-hubstaff.git
-cd mcp-hubstaff
+git clone https://github.com/evirachmi/emyoli-mcp-hubstaff.git
+cd emyoli-mcp-hubstaff
 npm install
 npm run build
 ```
@@ -64,7 +64,7 @@ You should see `mcp-hubstaff: health check OK` on stderr when `/users/me` succee
 
 ## MCP client configuration
 
-Paths below assume you cloned to `/absolute/path/to/mcp-hubstaff`.
+Paths below assume you cloned to `/absolute/path/to/emyoli-mcp-hubstaff`.
 
 ### Cursor
 
@@ -75,7 +75,7 @@ Add an MCP server entry (Cursor Settings → MCP) similar to:
   "mcpServers": {
     "hubstaff": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-hubstaff/dist/index.js"],
+      "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
       "env": {
         "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "your_token_here"
       }
@@ -93,7 +93,7 @@ Edit `claude_desktop_config.json` per Anthropic’s MCP documentation:
   "mcpServers": {
     "hubstaff": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-hubstaff/dist/index.js"],
+      "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
       "env": {
         "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "your_token_here"
       }
