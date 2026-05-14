@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { IncomingMessage } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 
-import type { Request, Response } from "express";
+import type { Express, Request, Response } from "express";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -26,22 +26,35 @@ export function requestBodyContainsInitialize(body: unknown): boolean {
 }
 
 /**
- * Starts MCP over Streamable HTTP (Express).
- *
- * Intended for `docker compose up -d` and MCP Inspector using an HTTP URL.
- * Sessions use an in-memory event store (from SDK examples); not durable across restarts.
+ * JSON responses avoid POST+SSE lifecycle quirks that break some MCP HTTP clients after the first request.
+ * Set `MCP_HTTP_JSON_RESPONSE=0` for legacy SSE POST responses (+ optional event store resumption).
  */
-export async function startHubstaffHttpServer(client: HubstaffClient, version: string): Promise<void> {
-  const host = process.env["MCP_HTTP_HOST"] ?? "0.0.0.0";
-  const port = Number.parseInt(process.env["MCP_HTTP_PORT"] ?? "3333", 10);
-  if (Number.isNaN(port)) {
-    throw new Error("Invalid MCP_HTTP_PORT.");
-  }
+function useJsonResponseMode(): boolean {
+  const v = process.env["MCP_HTTP_JSON_RESPONSE"]?.trim().toLowerCase();
+  if (v === "0" || v === "false" || v === "sse") return false;
+  return true;
+}
 
+export type HubstaffHttpServerBundle = {
+  app: Express;
+  /** Close all MCP Streamable HTTP sessions (each transport). */
+  closeAllSessions: () => Promise<void>;
+};
+
+/**
+ * Express app: `/health` plus Streamable HTTP MCP on `/mcp`.
+ */
+export function createHubstaffHttpApp(client: HubstaffClient, version: string): HubstaffHttpServerBundle {
+  const host = process.env["MCP_HTTP_HOST"] ?? "0.0.0.0";
   const app = createMcpExpressApp({ host });
 
   app.get("/health", (_req: Request, res: Response) => {
-    res.status(200).json({ status: "ok", service: "mcp-hubstaff", transport: "streamable-http" });
+    res.status(200).json({
+      status: "ok",
+      service: "mcp-hubstaff",
+      transport: "streamable-http",
+      responseMode: useJsonResponseMode() ? "json" : "sse",
+    });
   });
 
   const transports: Record<string, StreamableHTTPServerTransport> = {};
@@ -64,21 +77,18 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
         req.body !== null &&
         requestBodyContainsInitialize(req.body)
       ) {
-        const eventStore = new InMemoryEventStore();
+        const jsonMode = useJsonResponseMode();
         const activeTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
-          eventStore,
+          enableJsonResponse: jsonMode,
+          ...(jsonMode ? {} : { eventStore: new InMemoryEventStore() }),
           onsessioninitialized: (sid: string) => {
             transports[sid] = activeTransport;
           },
-        });
-
-        activeTransport.onclose = () => {
-          const sid = activeTransport.sessionId;
-          if (sid !== undefined) {
+          onsessionclosed: (sid: string) => {
             Reflect.deleteProperty(transports, sid);
-          }
-        };
+          },
+        });
 
         const mcp = createHubstaffMcpServer(version, client);
         await mcp.connect(activeTransport);
@@ -110,8 +120,8 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
   };
 
   const mcpGetHandler = async (req: Request, res: Response): Promise<void> => {
-    const sessionId = headerSessionId(req);
-    const existing = sessionId === undefined ? undefined : transports[sessionId];
+    const sid = headerSessionId(req);
+    const existing = sid === undefined ? undefined : transports[sid];
     if (existing === undefined) {
       res.status(400).send("Invalid or missing session ID");
       return;
@@ -120,8 +130,8 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
   };
 
   const mcpDeleteHandler = async (req: Request, res: Response): Promise<void> => {
-    const sessionId = headerSessionId(req);
-    const existing = sessionId === undefined ? undefined : transports[sessionId];
+    const sid = headerSessionId(req);
+    const existing = sid === undefined ? undefined : transports[sid];
     if (existing === undefined) {
       res.status(400).send("Invalid or missing session ID");
       return;
@@ -133,18 +143,7 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
   app.get("/mcp", mcpGetHandler);
   app.delete("/mcp", mcpDeleteHandler);
 
-  await new Promise<void>((resolve, reject) => {
-    const httpServer = app.listen(port, host, () => {
-      resolve();
-    });
-    httpServer.on("error", reject);
-  });
-
-  console.error(
-    `mcp-hubstaff: Streamable HTTP MCP at http://${host}:${String(port)}/mcp (GET /health for readiness)`,
-  );
-
-  const shutdown = async (): Promise<void> => {
+  const closeAllSessions = async (): Promise<void> => {
     const ids = Object.keys(transports);
     for (const id of ids) {
       const tr = transports[id];
@@ -159,10 +158,41 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
     }
   };
 
-  process.once("SIGINT", () => {
-    void shutdown().finally(() => process.exit(0));
+  return { app, closeAllSessions };
+}
+
+/**
+ * Starts MCP over Streamable HTTP (Express).
+ *
+ * Intended for `docker compose up -d` and MCP Inspector using an HTTP URL.
+ * Sessions use an in-memory map; not durable across restarts.
+ */
+export async function startHubstaffHttpServer(client: HubstaffClient, version: string): Promise<void> {
+  const host = process.env["MCP_HTTP_HOST"] ?? "0.0.0.0";
+  const port = Number.parseInt(process.env["MCP_HTTP_PORT"] ?? "3333", 10);
+  if (Number.isNaN(port)) {
+    throw new Error("Invalid MCP_HTTP_PORT.");
+  }
+
+  const { app, closeAllSessions } = createHubstaffHttpApp(client, version);
+
+  const httpServer = await new Promise<Server>((resolve, reject) => {
+    const s = app.listen(port, host, () => {
+      resolve(s);
+    });
+    s.on("error", reject);
   });
-  process.once("SIGTERM", () => {
-    void shutdown().finally(() => process.exit(0));
-  });
+
+  console.error(
+    `mcp-hubstaff: Streamable HTTP MCP at http://${host}:${String(port)}/mcp (GET /health for readiness; JSON responses: ${useJsonResponseMode() ? "on" : "off"})`,
+  );
+
+  const gracefulExit = (): void => {
+    void closeAllSessions().finally(() => {
+      httpServer.close(() => process.exit(0));
+    });
+  };
+
+  process.once("SIGINT", gracefulExit);
+  process.once("SIGTERM", gracefulExit);
 }

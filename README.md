@@ -48,6 +48,7 @@ Copy `.env.example` to `.env` (keep it untracked) **or** export variables in you
 | `MCP_HTTP_HOST` | With `http` | Bind address (default `0.0.0.0` in Docker HTTP service) |
 | `MCP_HTTP_PORT` | With `http` | Listen port inside the container (**pinned to 3333** in Compose HTTP service) |
 | `MCP_HTTP_PUBLISH_PORT` | Docker HTTP only | Host port mapped to container **3333** (default **3333**) |
+| `MCP_HTTP_JSON_RESPONSE` | No | Default **on** (`1`): MCP POST replies use **JSON** (recommended for Cursor — avoids “works once” SSE POST issues). Set `0`, `false`, or `sse` for legacy SSE POST responses + optional event-store stream. |
 
 Do **not** combine `HUBSTAFF_PERSONAL_ACCESS_TOKEN` with `HUBSTAFF_CLIENT_ID` / `HUBSTAFF_CLIENT_SECRET`.
 
@@ -369,7 +370,7 @@ Query parameter names follow Hubstaff’s reference (for example `page_start_id`
 
 ## Limits and operational notes
 
-- Streamable HTTP MCP keeps **sessions in memory**. Restarting the container clears them; clients must run **`initialize` again**. This server accepts **`initialize` even if the client still sends an old `mcp-session-id` header** (for example after `docker compose up --force-recreate`), so reconnecting should not fail with “No valid session ID provided.”
+- Streamable HTTP MCP keeps **sessions in memory**. Restarting the container clears them; clients must run **`initialize` again**. This server accepts **`initialize` even if the client still sends an old `mcp-session-id` header** (for example after `docker compose up --force-recreate`), so reconnecting should not fail with “No valid session ID provided.” By default **`MCP_HTTP_JSON_RESPONSE` is on**, so POST `/mcp` returns JSON instead of wrapping the first reply in an SSE stream — that matches Cursor’s Streamable HTTP client and avoids losing the session after the first round-trip.
 - Hubstaff enforces **rate limits** (documented around **1000 requests/hour per application** — verify in current Hubstaff docs).
 - Some queries can exceed Hubstaff’s **~30 second** processing window; narrow date ranges or filter dimensions when possible.
 - Organization IDs are **numeric**. Discover them via `hubstaff_list_organizations`.
