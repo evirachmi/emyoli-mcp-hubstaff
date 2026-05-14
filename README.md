@@ -13,7 +13,7 @@ This project is **not** affiliated with Hubstaff. Trademarks belong to their res
 - **OAuth refresh tokens** — optional support when you already exchange codes outside this binary.
 - **Automatic access-token refresh** — refresh tokens are rotated when Hubstaff returns new ones.
 - **Guardrailed escape hatch** — `hubstaff_api_get` only allows `organizations/*` and `users/*` prefixes.
-- **Docker** — run via `docker compose` without installing Node on the host (stdio-friendly flags documented below).
+- **Docker** — **stdio** MCP (`compose --profile stdio run`) for Cursor/Claude, or **detached HTTP MCP** (`compose up -d`) on port **3333** with `/health` + `/mcp` for Inspector / HTTP clients; `.env` is **never** copied into the image (Compose injects env at runtime).
 
 ## Requirements
 
@@ -43,6 +43,10 @@ Copy `.env.example` to `.env` (keep it untracked) **or** export variables in you
 | `HUBSTAFF_CLIENT_ID` | With OAuth refresh | OAuth application client id |
 | `HUBSTAFF_CLIENT_SECRET` | With OAuth refresh | OAuth application client secret |
 | `HUBSTAFF_API_BASE_URL` | No | Override API base (default `https://api.hubstaff.com/v2`) |
+| `MCP_TRANSPORT` | No | `stdio` (default) or `http` (Streamable HTTP server) |
+| `MCP_HTTP_HOST` | With `http` | Bind address (default `0.0.0.0` in Docker HTTP service) |
+| `MCP_HTTP_PORT` | With `http` | Listen port inside the container (**pinned to 3333** in Compose HTTP service) |
+| `MCP_HTTP_PUBLISH_PORT` | Docker HTTP only | Host port mapped to container **3333** (default **3333**) |
 
 Do **not** combine `HUBSTAFF_PERSONAL_ACCESS_TOKEN` with `HUBSTAFF_CLIENT_ID` / `HUBSTAFF_CLIENT_SECRET`.
 
@@ -55,7 +59,7 @@ npm install
 npm run build
 ```
 
-Prefer Docker instead of local Node? Jump to [Docker](#docker-recommended-if-you-do-not-want-node-on-the-host).
+Prefer Docker instead of local Node? Jump to [Docker](#docker).
 
 ### 4. Smoke test (calls Hubstaff)
 
@@ -66,15 +70,50 @@ node dist/index.js --health
 
 You should see `mcp-hubstaff: health check OK` on stderr when `/users/me` succeeds.
 
-## Docker (recommended if you do not want Node on the host)
+## Docker
 
-From the repository root (where `docker-compose.yml` lives), create a `.env` file—Compose reads it automatically for variable substitution (same variables as [.env.example](./.env.example)).
+### Important: stdio vs HTTP
 
-Build and sanity-check against Hubstaff:
+The classic MCP integration speaks **JSON-RPC over stdin/stdout**. That mode **does not listen on a TCP port**, and **`docker compose up -d` cannot attach a client to stdin**, so detached containers are a poor fit for **stdio MCP**.
+
+This repo supports two Compose workflows:
+
+| Goal | Command |
+| --- | --- |
+| **Detached server + port for testing / HTTP MCP clients** | `docker compose up -d mcp-hubstaff-http` |
+| **Stdio MCP (Cursor / Claude spawning Docker)** | `docker compose --profile stdio run --rm -i -T mcp-hubstaff-stdio` |
+
+HTTP mode exposes:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `http://localhost:${MCP_HTTP_PUBLISH_PORT:-3333}/mcp` | MCP Streamable HTTP |
+| `http://localhost:${MCP_HTTP_PUBLISH_PORT:-3333}/health` | Lightweight readiness (does not call Hubstaff) |
+
+Deep credential/API verification still uses `node dist/index.js --health` (calls Hubstaff `/users/me`).
+
+### Secrets and `.env` (do **not** bake into the image)
+
+**Never `COPY .env` into the Dockerfile.** Keep secrets on the host or in your orchestrator’s secret store.
+
+Docker Compose loads the project `.env` file automatically for `${VAR}` substitution on **your machine** and passes the resulting values into the container via `environment:` — nothing is copied into image layers.
+
+**Security:** HTTP MCP **does not implement authentication**. This Compose file publishes the port on **localhost only** (`127.0.0.1`) by default. Use your own proxy and credentials before exposing it broadly.
+
+### Typical commands
 
 ```bash
 docker compose build
-docker compose run --rm -i -T mcp-hubstaff node dist/index.js --health
+
+# Hubstaff token check (one-off container)
+npm run docker:health
+
+# Detached HTTP MCP + published port (default host port 3333)
+docker compose up -d mcp-hubstaff-http
+curl -sf http://localhost:3333/health | jq .
+
+# Stop
+docker compose down
 ```
 
 Helper scripts:
@@ -82,10 +121,21 @@ Helper scripts:
 | Script | What it runs |
 | --- | --- |
 | `npm run docker:build` | `docker compose build` |
-| `npm run docker:health` | Health check inside a one-off container |
-| `npm run docker:run` | Starts the MCP server on stdio (used by MCP clients; see below) |
+| `npm run docker:up` | `docker compose up -d mcp-hubstaff-http` |
+| `npm run docker:down` | `docker compose down` |
+| `npm run docker:health` | Hubstaff health check in a throwaway container |
+| `npm run docker:run` | Stdio MCP via `mcp-hubstaff-stdio` profile |
 
-**Why `-i -T`?** MCP speaks JSON-RPC over stdio. `docker compose run --rm -i -T` keeps stdin open for the host process while disabling a pseudo-TTY, which matches how most MCP hosts spawn subprocesses.
+**Why `-i -T` for stdio?** MCP speaks JSON-RPC over stdio. `docker compose run --rm -i -T` keeps stdin open while disabling a pseudo-TTY, matching most MCP hosts.
+
+### Environment variables (HTTP)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_TRANSPORT` | `stdio` for bare Node | Set to `http` to listen with Express |
+| `MCP_HTTP_HOST` | `0.0.0.0` | Bind address inside the container |
+| `MCP_HTTP_PORT` | `3333` | Port inside the container (Compose pins this to **3333**) |
+| `MCP_HTTP_PUBLISH_PORT` | `3333` | Host port mapped by Compose |
 
 ## MCP client configuration
 
@@ -111,7 +161,7 @@ Add an MCP server entry (Cursor Settings → MCP). Pick **either** Node **or** D
 }
 ```
 
-**Docker Compose** (token in repo-root `.env`, or exported in your shell before launching Cursor)
+**Docker Compose (stdio MCP)**
 
 ```json
 {
@@ -122,18 +172,24 @@ Add an MCP server entry (Cursor Settings → MCP). Pick **either** Node **or** D
         "compose",
         "-f",
         "/absolute/path/to/emyoli-mcp-hubstaff/docker-compose.yml",
+        "--profile",
+        "stdio",
         "run",
         "--rm",
         "-i",
         "-T",
-        "mcp-hubstaff"
+        "mcp-hubstaff-stdio"
       ]
     }
   }
 }
 ```
 
-Run `docker compose build` once from that directory so the image exists.
+Ensure Hubstaff credentials are available to Compose (repo-root `.env`, or exported in your shell before launching Cursor).
+
+**HTTP MCP** (after `docker compose up -d mcp-hubstaff-http`): configure your client to connect with **Streamable HTTP** to `http://localhost:3333/mcp` (or your chosen `MCP_HTTP_PUBLISH_PORT`). Exact UI fields depend on the MCP host—use MCP Inspector’s HTTP mode while iterating.
+
+Run `docker compose build` once so the image exists.
 
 ### Claude Desktop
 
@@ -149,6 +205,8 @@ npm run inspect
 (`inspect` runs `npx @modelcontextprotocol/inspector` against `./dist/index.js`; use an absolute path if you prefer calling `npx` directly.)
 
 Load `HUBSTAFF_PERSONAL_ACCESS_TOKEN` into the inspector environment before connecting.
+
+After `docker compose up -d mcp-hubstaff-http`, connect the Inspector with **Streamable HTTP** to `http://localhost:3333/mcp` (exact wording varies by Inspector release).
 
 ## Tools
 
@@ -178,6 +236,7 @@ Query parameter names follow Hubstaff’s reference (for example `page_start_id`
 | `npm run build` | Emit JavaScript to `dist/` |
 | `npm test` | Unit tests (`vitest`) |
 | `npm run lint` | ESLint (`typescript-eslint`) |
+| `MCP_TRANSPORT=http npm run start` | Local Streamable HTTP server (`/mcp`, `/health`) |
 
 ## Limits and operational notes
 

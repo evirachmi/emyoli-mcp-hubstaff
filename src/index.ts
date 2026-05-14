@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createHubstaffMcpServer } from "./createHubstaffMcp.js";
 import {
   createHubstaffFromEnv,
   getServerVersion,
   runHealthCheck,
   shouldRunHealthCheck,
 } from "./env.js";
-import { registerHubstaffTools } from "./server.js";
+import { startHubstaffHttpServer } from "./httpTransport.js";
+
+function useHttpTransport(): boolean {
+  return process.env["MCP_TRANSPORT"]?.trim().toLowerCase() === "http";
+}
 
 async function main(): Promise<void> {
   if (shouldRunHealthCheck(process.argv)) {
@@ -27,16 +31,12 @@ async function main(): Promise<void> {
   const version = getServerVersion();
   const { client } = createHubstaffFromEnv();
 
-  const mcp = new McpServer(
-    { name: "mcp-hubstaff", version },
-    {
-      instructions:
-        "Tools wrap Hubstaff API v2 reads. Configure credentials with HUBSTAFF_PERSONAL_ACCESS_TOKEN (recommended) or OAuth refresh env vars documented in the server README.",
-    },
-  );
+  if (useHttpTransport()) {
+    await startHubstaffHttpServer(client, version);
+    return;
+  }
 
-  registerHubstaffTools(mcp, client);
-
+  const mcp = createHubstaffMcpServer(version, client);
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
 }

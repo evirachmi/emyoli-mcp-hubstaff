@@ -19,8 +19,10 @@
     "test:watch": "vitest",
     "inspect": "npx --yes @modelcontextprotocol/inspector@latest node ./dist/index.js",
     "docker:build": "docker compose build",
-    "docker:run": "docker compose run --rm -i -T mcp-hubstaff",
-    "docker:health": "docker compose run --rm -i -T mcp-hubstaff node dist/index.js --health",
+    "docker:up": "docker compose up -d mcp-hubstaff-http",
+    "docker:down": "docker compose down",
+    "docker:run": "docker compose --profile stdio run --rm -i -T mcp-hubstaff-stdio",
+    "docker:health": "docker compose run --rm -i -T mcp-hubstaff-http node dist/index.js --health",
     "prepublishOnly": "npm run build"
   },
   "engines": {
@@ -45,10 +47,12 @@
   "homepage": "https://github.com/evirachmi/emyoli-mcp-hubstaff#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
     "zod": "^3.24.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.17",
     "eslint": "^9.26.0",
     "tsx": "^4.19.4",

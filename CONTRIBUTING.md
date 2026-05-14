@@ -20,10 +20,17 @@ npm run lint
 
 ## Docker image
 
-After editing the Dockerfile or dependency graph, verify the image still builds:
+After editing the Dockerfile or dependency graph, verify images still build:
 
 ```bash
 docker compose build
+```
+
+For the detached HTTP transport:
+
+```bash
+docker compose up -d mcp-hubstaff-http
+curl -sf http://localhost:3333/health
 ```
 
 ## Hubstaff credentials

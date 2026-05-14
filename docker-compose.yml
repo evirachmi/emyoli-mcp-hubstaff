@@ -1,5 +1,40 @@
 services:
-  mcp-hubstaff:
+  # Detached HTTP MCP — `docker compose up -d mcp-hubstaff-http`
+  # Compose reads the project `.env` file automatically for ${VAR} substitution (do not bake secrets into the image).
+  mcp-hubstaff-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: emyoli-mcp-hubstaff:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MCP_HTTP_PUBLISH_PORT:-3333}:3333"
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: "3333"
+      HUBSTAFF_PERSONAL_ACCESS_TOKEN: ${HUBSTAFF_PERSONAL_ACCESS_TOKEN:-}
+      HUBSTAFF_REFRESH_TOKEN: ${HUBSTAFF_REFRESH_TOKEN:-}
+      HUBSTAFF_CLIENT_ID: ${HUBSTAFF_CLIENT_ID:-}
+      HUBSTAFF_CLIENT_SECRET: ${HUBSTAFF_CLIENT_SECRET:-}
+      HUBSTAFF_API_BASE_URL: ${HUBSTAFF_API_BASE_URL:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3333/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Stdio MCP — `docker compose --profile stdio run --rm -i -T mcp-hubstaff-stdio`
+  mcp-hubstaff-stdio:
+    profiles:
+      - stdio
     build:
       context: .
       dockerfile: Dockerfile
@@ -7,6 +42,7 @@ services:
     stdin_open: true
     tty: false
     environment:
+      MCP_TRANSPORT: stdio
       HUBSTAFF_PERSONAL_ACCESS_TOKEN: ${HUBSTAFF_PERSONAL_ACCESS_TOKEN:-}
       HUBSTAFF_REFRESH_TOKEN: ${HUBSTAFF_REFRESH_TOKEN:-}
       HUBSTAFF_CLIENT_ID: ${HUBSTAFF_CLIENT_ID:-}
