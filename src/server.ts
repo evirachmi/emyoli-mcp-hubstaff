@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { buildActivitiesListQuery, buildDailyActivitiesQuery } from "./hubstaff/activityQuery.js";
 import type { HubstaffClient } from "./hubstaff/client.js";
 
 function jsonResult(data: unknown) {
@@ -177,12 +178,13 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
     "hubstaff_list_activities",
     {
       description:
-        "Lists raw activity records for an organization (GET /organizations/{organization_id}/activities). Narrow start_time/stop_time when possible (Hubstaff may timeout on large ranges).",
+        "Lists raw activity records for an organization (GET /organizations/{organization_id}/activities). Pass start_time/stop_time (ISO); these are sent as time_slot[start]/time_slot[stop]. Pass user_id → user_ids. Narrow the range when possible (Hubstaff may timeout on large ranges). Use activity `id` with hubstaff_delete_activity to remove a segment.",
       inputSchema: organizationIdSchema.merge(activityFilterSchema),
     },
     async (args) => {
       try {
-        const { organization_id, ...query } = args;
+        const { organization_id, ...rest } = args;
+        const query = buildActivitiesListQuery(rest);
         const data = await client.getJson(`organizations/${String(organization_id)}/activities`, query);
         return jsonResult(data);
       } catch (error: unknown) {
@@ -195,12 +197,13 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
     "hubstaff_list_daily_activities",
     {
       description:
-        "Lists daily aggregated activities for an organization (GET /organizations/{organization_id}/activities/daily). Prefer this for reporting-style summaries.",
+        "Lists daily aggregated activities for an organization (GET /organizations/{organization_id}/activities/daily). Prefer this for reporting-style summaries. Uses Hubstaff `date[start]` / `date[stop]` (map from start_time/stop_time).",
       inputSchema: organizationIdSchema.merge(activityFilterSchema),
     },
     async (args) => {
       try {
-        const { organization_id, ...query } = args;
+        const { organization_id, ...rest } = args;
+        const query = buildDailyActivitiesQuery(rest);
         const data = await client.getJson(`organizations/${String(organization_id)}/activities/daily`, query);
         return jsonResult(data);
       } catch (error: unknown) {
@@ -327,7 +330,7 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
     "hubstaff_delete_time_entry",
     {
       description:
-        "WRITE / DESTRUCTIVE: Deletes a time entry for the given user (DELETE /users/{user_id}/time_entries/{time_entry_id}). Resolve IDs via Hubstaff UI or GET endpoints such as timesheets/activities. Requires write scopes.",
+        "WRITE / DESTRUCTIVE: Deletes by Hubstaff time_entry id (DELETE /users/{user_id}/time_entries/{time_entry_id}). That id is not the same as activity row ids from list_activities — use hubstaff_delete_activity for those. Requires write scopes.",
       inputSchema: z.object({
         user_id: z.number().int().positive(),
         time_entry_id: z.number().int().positive(),
@@ -339,6 +342,30 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
           `users/${String(args.user_id)}/time_entries/${String(args.time_entry_id)}`,
         );
         return jsonResult(data ?? { deleted: true, time_entry_id: args.time_entry_id });
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "hubstaff_delete_activity",
+    {
+      description:
+        "WRITE / DESTRUCTIVE: Deletes one activity row (10-minute segment), including manual time blocks returned by hubstaff_list_activities (DELETE /organizations/{organization_id}/activities/{activity_id}). Pass the numeric `id` field from an activity object. Requires write scopes on the PAT.",
+      inputSchema: z.object({
+        organization_id: z.number().int().positive(),
+        activity_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const data = await client.deleteJson(
+          `organizations/${String(args.organization_id)}/activities/${String(args.activity_id)}`,
+        );
+        return jsonResult(
+          data ?? { deleted: true, organization_id: args.organization_id, activity_id: args.activity_id },
+        );
       } catch (error: unknown) {
         return toolError(error instanceof Error ? error.message : String(error));
       }

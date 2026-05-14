@@ -349,14 +349,15 @@ Run `docker compose build` once so Docker-based snippets work.
 | `hubstaff_get_user` | `GET /users/{user_id}` |
 | `hubstaff_api_get` | Authenticated `GET` under `/v2` with path allowlist |
 | `hubstaff_create_time_entry` | `POST /users/{user_id}/time_entries` (manual hours) |
-| `hubstaff_delete_time_entry` | `DELETE /users/{user_id}/time_entries/{time_entry_id}` |
+| `hubstaff_delete_time_entry` | `DELETE /users/{user_id}/time_entries/{time_entry_id}` (not the same id as activity rows) |
+| `hubstaff_delete_activity` | `DELETE /organizations/{organization_id}/activities/{activity_id}` (segments from `list_activities`) |
 | `hubstaff_create_project` | `POST /organizations/{id}/projects` |
 | `hubstaff_update_project` | `PUT /projects/{project_id}` |
 | `hubstaff_create_task` | `POST /organizations/{id}/tasks` |
 
 Write tools call Hubstaff directly; confirm your **personal access token** or OAuth app includes the scopes Hubstaff documents for those routes (otherwise the API returns `403`).
 
-Query parameter names follow Hubstaff’s reference (for example `page_start_id`, `start_time`, `stop_time`). When in doubt, consult the official API docs for the endpoint you are calling.
+Query parameter names for **`hubstaff_list_activities`** / **`hubstaff_list_daily_activities`**: the tools accept `start_time`, `stop_time`, and `user_id` and map them to Hubstaff’s `time_slot[start]` / `time_slot[stop]`, or `date[start]` / `date[stop]`, and `user_ids`, as required by the API. For other tools and `hubstaff_api_get`, use the bracketed names from the official docs when applicable.
 
 ## Development scripts
 
