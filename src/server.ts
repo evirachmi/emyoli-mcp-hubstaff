@@ -314,9 +314,8 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
         if (args.note !== undefined && args.note !== "") time_entry.note = args.note;
         if (args.task_id !== undefined) time_entry.task_id = args.task_id;
 
-        const data = await client.postJson(`users/${String(args.user_id)}/time_entries`, {
-          time_entry,
-        });
+        // Hubstaff rejects nested `time_entry` here; send attributes at the root body.
+        const data = await client.postJson(`users/${String(args.user_id)}/time_entries`, time_entry);
         return jsonResult(data);
       } catch (error: unknown) {
         return toolError(error instanceof Error ? error.message : String(error));
