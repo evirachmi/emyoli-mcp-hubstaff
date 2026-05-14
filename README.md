@@ -369,6 +369,7 @@ Query parameter names follow Hubstaff’s reference (for example `page_start_id`
 
 ## Limits and operational notes
 
+- Streamable HTTP MCP keeps **sessions in memory**. Restarting the container clears them; clients must run **`initialize` again**. This server accepts **`initialize` even if the client still sends an old `mcp-session-id` header** (for example after `docker compose up --force-recreate`), so reconnecting should not fail with “No valid session ID provided.”
 - Hubstaff enforces **rate limits** (documented around **1000 requests/hour per application** — verify in current Hubstaff docs).
 - Some queries can exceed Hubstaff’s **~30 second** processing window; narrow date ranges or filter dimensions when possible.
 - Organization IDs are **numeric**. Discover them via `hubstaff_list_organizations`.

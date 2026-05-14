@@ -17,6 +17,14 @@ function headerSessionId(req: IncomingMessage): string | undefined {
   return undefined;
 }
 
+/** Detect MCP initialize in a POST body (single JSON-RPC message or batch array). */
+export function requestBodyContainsInitialize(body: unknown): boolean {
+  if (Array.isArray(body)) {
+    return body.some((msg) => isInitializeRequest(msg));
+  }
+  return isInitializeRequest(body);
+}
+
 /**
  * Starts MCP over Streamable HTTP (Express).
  *
@@ -40,17 +48,21 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
 
   const mcpPostHandler = async (req: Request, res: Response): Promise<void> => {
     const sessionId = headerSessionId(req);
+    const existingTransport =
+      sessionId !== undefined && transports[sessionId] !== undefined
+        ? transports[sessionId]
+        : undefined;
 
     try {
-      let transport: StreamableHTTPServerTransport | undefined;
+      if (existingTransport !== undefined) {
+        await existingTransport.handleRequest(req, res, req.body);
+        return;
+      }
 
-      if (sessionId !== undefined && transports[sessionId] !== undefined) {
-        transport = transports[sessionId];
-      } else if (
-        sessionId === undefined &&
+      if (
         typeof req.body === "object" &&
         req.body !== null &&
-        isInitializeRequest(req.body)
+        requestBodyContainsInitialize(req.body)
       ) {
         const eventStore = new InMemoryEventStore();
         const activeTransport = new StreamableHTTPServerTransport({
@@ -72,19 +84,16 @@ export async function startHubstaffHttpServer(client: HubstaffClient, version: s
         await mcp.connect(activeTransport);
         await activeTransport.handleRequest(req, res, req.body);
         return;
-      } else {
-        res.status(400).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Bad Request: No valid session ID provided",
-          },
-          id: null,
-        });
-        return;
       }
 
-      await transport.handleRequest(req, res, req.body);
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Bad Request: No valid session ID provided",
+        },
+        id: null,
+      });
     } catch (error: unknown) {
       console.error(error);
       if (!res.headersSent) {
