@@ -85,6 +85,21 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
   const host = process.env["MCP_HTTP_HOST"] ?? "0.0.0.0";
   const app = createMcpExpressApp({ host });
 
+  /**
+   * Serialize POST /mcp: concurrent initialize requests could otherwise run disposeAllTransports()
+   * while another handler still uses its transport — rare but causes flaky “No valid session ID”.
+   */
+  let postExclusiveChain: Promise<void> = Promise.resolve();
+
+  const runPostExclusive = async (fn: () => Promise<void>): Promise<void> => {
+    const next = postExclusiveChain.then(fn);
+    postExclusiveChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    await next;
+  };
+
   app.get("/health", (_req: Request, res: Response) => {
     res.status(200).json({
       status: "ok",
@@ -112,86 +127,88 @@ export function createHubstaffHttpApp(client: HubstaffClient, version: string): 
   };
 
   const mcpPostHandler = async (req: Request, res: Response): Promise<void> => {
-    const sessionId = headerSessionId(req);
-    const parsedBody = normalizeMcpPostBody(req.body);
-    const existingTransport =
-      sessionId !== undefined && transports[sessionId] !== undefined
-        ? transports[sessionId]
-        : undefined;
+    await runPostExclusive(async () => {
+      const sessionId = headerSessionId(req);
+      const parsedBody = normalizeMcpPostBody(req.body);
+      const existingTransport =
+        sessionId !== undefined && transports[sessionId] !== undefined
+          ? transports[sessionId]
+          : undefined;
 
-    try {
-      if (existingTransport !== undefined) {
-        await existingTransport.handleRequest(req, res, parsedBody);
-        return;
-      }
+      try {
+        if (existingTransport !== undefined) {
+          await existingTransport.handleRequest(req, res, parsedBody);
+          return;
+        }
 
-      if (
-        typeof parsedBody === "object" &&
-        parsedBody !== null &&
-        requestBodyContainsInitialize(parsedBody)
-      ) {
-        await disposeAllTransports();
-
-        const jsonMode = useJsonResponseMode();
-        const activeTransport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          enableJsonResponse: jsonMode,
-          ...(jsonMode ? {} : { eventStore: new InMemoryEventStore() }),
-          onsessioninitialized: (sid: string) => {
-            transports[sid] = activeTransport;
-          },
-          onsessionclosed: (sid: string) => {
-            Reflect.deleteProperty(transports, sid);
-          },
-        });
-
-        const mcp = createHubstaffMcpServer(version, client);
-        await mcp.connect(activeTransport);
-        await activeTransport.handleRequest(req, res, parsedBody);
-        return;
-      }
-
-      if (!useStrictSessionRouting()) {
-        const ids = Object.keys(transports);
         if (
-          ids.length === 1 &&
           typeof parsedBody === "object" &&
           parsedBody !== null &&
-          !requestBodyContainsInitialize(parsedBody)
+          requestBodyContainsInitialize(parsedBody)
         ) {
-          const soleSessionKey = ids[0];
-          if (soleSessionKey !== undefined) {
-            const onlyTransport = transports[soleSessionKey];
-            if (onlyTransport !== undefined) {
-              setIncomingSessionHeader(req, soleSessionKey);
-              await onlyTransport.handleRequest(req, res, parsedBody);
-              return;
+          await disposeAllTransports();
+
+          const jsonMode = useJsonResponseMode();
+          const activeTransport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            enableJsonResponse: jsonMode,
+            ...(jsonMode ? {} : { eventStore: new InMemoryEventStore() }),
+            onsessioninitialized: (sid: string) => {
+              transports[sid] = activeTransport;
+            },
+            onsessionclosed: (sid: string) => {
+              Reflect.deleteProperty(transports, sid);
+            },
+          });
+
+          const mcp = createHubstaffMcpServer(version, client);
+          await mcp.connect(activeTransport);
+          await activeTransport.handleRequest(req, res, parsedBody);
+          return;
+        }
+
+        if (!useStrictSessionRouting()) {
+          const ids = Object.keys(transports);
+          if (
+            ids.length === 1 &&
+            typeof parsedBody === "object" &&
+            parsedBody !== null &&
+            !requestBodyContainsInitialize(parsedBody)
+          ) {
+            const soleSessionKey = ids[0];
+            if (soleSessionKey !== undefined) {
+              const onlyTransport = transports[soleSessionKey];
+              if (onlyTransport !== undefined) {
+                setIncomingSessionHeader(req, soleSessionKey);
+                await onlyTransport.handleRequest(req, res, parsedBody);
+                return;
+              }
             }
           }
         }
-      }
 
-      res.status(400).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Bad Request: No valid session ID provided",
-        },
-        id: null,
-      });
-    } catch (error: unknown) {
-      console.error(error);
-      if (!res.headersSent) {
-        res.status(500).json({
+        res.status(400).json({
           jsonrpc: "2.0",
           error: {
-            code: -32603,
-            message: "Internal server error",
+            code: -32000,
+            message: "Bad Request: No valid session ID provided",
           },
           id: null,
         });
+      } catch (error: unknown) {
+        console.error(error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: "2.0",
+            error: {
+              code: -32603,
+              message: "Internal server error",
+            },
+            id: null,
+          });
+        }
       }
-    }
+    });
   };
 
   const mcpGetHandler = async (req: Request, res: Response): Promise<void> => {
