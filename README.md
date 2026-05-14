@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml/badge.svg)](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml)
 
-A small [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes **read-only** access to the [Hubstaff API v2](https://developer.hubstaff.com/docs/hubstaff_v2). Use it from Cursor, Claude Desktop, or any MCP-capable client to query organizations, projects, members, activities, and related reporting data.
+A small [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes **read** and **selected write** access to the [Hubstaff API v2](https://developer.hubstaff.com/docs/hubstaff_v2). Use it from Cursor, Claude Desktop, or any MCP-capable client to query organizations, projects, members, activities, and related reporting data, or to create manual time entries and manage projects/tasks where your token allows.
 
 This project is **not** affiliated with Hubstaff. Trademarks belong to their respective owners.
 
@@ -12,7 +12,8 @@ This project is **not** affiliated with Hubstaff. Trademarks belong to their res
 - **Personal access tokens** — intended workflow for automation (`HUBSTAFF_PERSONAL_ACCESS_TOKEN`).
 - **OAuth refresh tokens** — optional support when you already exchange codes outside this binary.
 - **Automatic access-token refresh** — refresh tokens are rotated when Hubstaff returns new ones.
-- **Guardrailed escape hatch** — `hubstaff_api_get` only allows `organizations/*` and `users/*` prefixes.
+- **Guardrailed escape hatch** — `hubstaff_api_get` only allows `organizations/*` and `users/*` prefixes (read-only).
+- **Explicit write tools** — create/delete time entries, create/update projects, create tasks; destructive actions are labeled in tool descriptions. Writes require Hubstaff token scopes that permit those endpoints (see Hubstaff PAT / OAuth docs).
 - **Docker** — **stdio** MCP (`compose --profile stdio run`) for Cursor/Claude, or **detached HTTP MCP** (`compose up -d`) on port **3333** with `/health` + `/mcp` for Inspector / HTTP clients; `.env` is **never** copied into the image (Compose injects env at runtime).
 
 ## Requirements
@@ -346,6 +347,13 @@ Run `docker compose build` once so Docker-based snippets work.
 | `hubstaff_list_screenshots` | `GET /organizations/{id}/screenshots` |
 | `hubstaff_get_user` | `GET /users/{user_id}` |
 | `hubstaff_api_get` | Authenticated `GET` under `/v2` with path allowlist |
+| `hubstaff_create_time_entry` | `POST /users/{user_id}/time_entries` (manual hours) |
+| `hubstaff_delete_time_entry` | `DELETE /users/{user_id}/time_entries/{time_entry_id}` |
+| `hubstaff_create_project` | `POST /organizations/{id}/projects` |
+| `hubstaff_update_project` | `PUT /projects/{project_id}` |
+| `hubstaff_create_task` | `POST /organizations/{id}/tasks` |
+
+Write tools call Hubstaff directly; confirm your **personal access token** or OAuth app includes the scopes Hubstaff documents for those routes (otherwise the API returns `403`).
 
 Query parameter names follow Hubstaff’s reference (for example `page_start_id`, `start_time`, `stop_time`). When in doubt, consult the official API docs for the endpoint you are calling.
 

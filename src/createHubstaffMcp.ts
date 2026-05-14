@@ -7,7 +7,7 @@ export function createHubstaffMcpServer(version: string, client: HubstaffClient)
     { name: "mcp-hubstaff", version },
     {
       instructions:
-        "Tools wrap Hubstaff API v2 reads. Configure credentials with HUBSTAFF_PERSONAL_ACCESS_TOKEN (recommended) or OAuth refresh env vars documented in the server README.",
+        "Tools wrap Hubstaff API v2 reads and selected writes (time entries, projects, tasks). Destructive tools are labeled in their descriptions. Configure credentials with HUBSTAFF_PERSONAL_ACCESS_TOKEN (recommended) or OAuth refresh env vars documented in the server README; tokens must include scopes Hubstaff requires for write endpoints.",
     },
   );
 

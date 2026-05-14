@@ -285,4 +285,161 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
       }
     },
   );
+
+  const createTimeEntrySchema = z.object({
+    user_id: z.number().int().positive(),
+    project_id: z.number().int().positive(),
+    start_time: z.string().min(1),
+    tracked: z.number().int().nonnegative(),
+    billable: z.boolean().optional(),
+    note: z.string().optional(),
+    task_id: z.number().int().positive().optional(),
+  });
+
+  server.registerTool(
+    "hubstaff_create_time_entry",
+    {
+      description:
+        "WRITE: Creates a manual time entry for a user on a project (Hubstaff API v2 POST /users/{user_id}/time_entries). `tracked` is duration in seconds. Requires a token/PAT with write scopes (see Hubstaff docs).",
+      inputSchema: createTimeEntrySchema,
+    },
+    async (args) => {
+      try {
+        const time_entry: Record<string, unknown> = {
+          project_id: args.project_id,
+          start_time: args.start_time,
+          tracked: args.tracked,
+        };
+        if (args.billable !== undefined) time_entry.billable = args.billable;
+        if (args.note !== undefined && args.note !== "") time_entry.note = args.note;
+        if (args.task_id !== undefined) time_entry.task_id = args.task_id;
+
+        const data = await client.postJson(`users/${String(args.user_id)}/time_entries`, {
+          time_entry,
+        });
+        return jsonResult(data);
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "hubstaff_delete_time_entry",
+    {
+      description:
+        "WRITE / DESTRUCTIVE: Deletes a time entry for the given user (DELETE /users/{user_id}/time_entries/{time_entry_id}). Resolve IDs via Hubstaff UI or GET endpoints such as timesheets/activities. Requires write scopes.",
+      inputSchema: z.object({
+        user_id: z.number().int().positive(),
+        time_entry_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const data = await client.deleteJson(
+          `users/${String(args.user_id)}/time_entries/${String(args.time_entry_id)}`,
+        );
+        return jsonResult(data ?? { deleted: true, time_entry_id: args.time_entry_id });
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "hubstaff_create_project",
+    {
+      description:
+        "WRITE: Creates a project in an organization (POST /organizations/{organization_id}/projects). Requires write scopes.",
+      inputSchema: organizationIdSchema.extend({
+        name: z.string().min(1),
+        description: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        const project: Record<string, unknown> = { name: args.name };
+        if (args.description !== undefined && args.description !== "") {
+          project.description = args.description;
+        }
+        const data = await client.postJson(`organizations/${String(args.organization_id)}/projects`, {
+          project,
+        });
+        return jsonResult(data);
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  const updateProjectSchema = z
+    .object({
+      project_id: z.number().int().positive(),
+      name: z.string().min(1).optional(),
+      description: z.string().optional(),
+      status: z.enum(["active", "archived", "inactive"]).optional(),
+    })
+    .superRefine((val, ctx) => {
+      if (val.name === undefined && val.description === undefined && val.status === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Provide at least one of name, description, or status.",
+        });
+      }
+    });
+
+  server.registerTool(
+    "hubstaff_update_project",
+    {
+      description:
+        "WRITE: Updates a project by ID (PUT /projects/{project_id}). Requires write scopes.",
+      inputSchema: updateProjectSchema,
+    },
+    async (args) => {
+      try {
+        const project: Record<string, unknown> = {};
+        if (args.name !== undefined) project.name = args.name;
+        if (args.description !== undefined) project.description = args.description;
+        if (args.status !== undefined) project.status = args.status;
+
+        const data = await client.putJson(`projects/${String(args.project_id)}`, { project });
+        return jsonResult(data);
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "hubstaff_create_task",
+    {
+      description:
+        "WRITE: Creates a task in an organization (POST /organizations/{organization_id}/tasks). Optionally link to a project or assignee. Requires write scopes.",
+      inputSchema: organizationIdSchema.extend({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        project_id: z.number().int().positive().optional(),
+        user_id: z.number().int().positive().optional(),
+        status: z.string().optional(),
+        priority: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        const task: Record<string, unknown> = { name: args.name };
+        if (args.description !== undefined && args.description !== "") task.description = args.description;
+        if (args.project_id !== undefined) task.project_id = args.project_id;
+        if (args.user_id !== undefined) task.user_id = args.user_id;
+        if (args.status !== undefined && args.status !== "") task.status = args.status;
+        if (args.priority !== undefined && args.priority !== "") task.priority = args.priority;
+
+        const data = await client.postJson(`organizations/${String(args.organization_id)}/tasks`, {
+          task,
+        });
+        return jsonResult(data);
+      } catch (error: unknown) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
 }
