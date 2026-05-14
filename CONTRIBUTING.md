@@ -50,4 +50,16 @@ node dist/index.js --health
 
 Version bumps follow semantic versioning. Maintainers update `package.json` (for example `npm version patch`), commit the bump, and publish to npm when applicable.
 
-The version the MCP server reports comes from that `version` field (read from `package.json` next to `dist/`), so Docker and plain `node dist/index.js` match the published release without relying on npm’s runtime environment.
+The version the **MCP server** reports comes from that `version` field (read from `package.json` next to `dist/`), so Docker and plain `node dist/index.js` match the package without relying on npm’s runtime environment.
+
+### GitHub Releases (optional)
+
+GitHub’s [Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) page is driven by **Git tags** (for example `v0.1.0` for package version `0.1.0`). Pushing such a tag runs the **Release** workflow (lint, test, build, Docker build) and opens a release with generated notes.
+
+```bash
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin main   # if needed
+git push origin v0.1.0
+```
+
+Deleting a tag on GitHub removes the release tied to it, so the Releases tab can look empty until you tag again.
