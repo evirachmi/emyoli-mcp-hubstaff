@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml/badge.svg)](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml)
 
-**[Emyoli Technologies](https://emyoli.com)** — We’re a privately held software company: distributed teams across **Eastern Europe** (with focal points in **Romania** and **Moldova**), accountable offshore partners for organizations of many sizes. We emphasize responsiveness, transparency, and ethical delivery. Read more on **[About Emyoli](https://emyoli.com/aboutus/)**.
+**[Emyoli Technologies](https://emyoli.com)** — We’re a privately held software company with a distributed team, serving as accountable partners for organizations of many sizes. We emphasize responsiveness, transparency, and ethical delivery. Details on **[About Emyoli](https://emyoli.com/aboutus/)**.
 
 ---
 
