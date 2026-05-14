@@ -6,6 +6,7 @@ import {
   createHubstaffFromEnv,
   getServerVersion,
   runHealthCheck,
+  shouldPrintVersion,
   shouldRunHealthCheck,
 } from "./env.js";
 import { startHubstaffHttpServer } from "./httpTransport.js";
@@ -15,6 +16,11 @@ function useHttpTransport(): boolean {
 }
 
 async function main(): Promise<void> {
+  if (shouldPrintVersion(process.argv)) {
+    console.log(getServerVersion());
+    return;
+  }
+
   if (shouldRunHealthCheck(process.argv)) {
     try {
       await runHealthCheck();

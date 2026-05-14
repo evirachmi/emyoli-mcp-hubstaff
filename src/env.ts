@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { HubstaffAuthOptions } from "./hubstaff/auth.js";
 import { HubstaffAuth } from "./hubstaff/auth.js";
 import { HubstaffClient } from "./hubstaff/client.js";
@@ -63,8 +67,31 @@ export function assertHubstaffEnvConfigured(env: NodeJS.ProcessEnv = process.env
   createHubstaffFromEnv(env);
 }
 
+function readVersionFromPackageJson(): string | undefined {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkgPath = join(here, "..", "package.json");
+    const parsed = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
+    if (typeof parsed.version === "string") {
+      const v = parsed.version.trim();
+      if (v !== "") return v;
+    }
+  } catch {
+    /* missing or invalid package.json */
+  }
+  return undefined;
+}
+
+/**
+ * Semver from `package.json` next to the compiled `dist/` tree (Docker, `node dist/index.js`);
+ * falls back to `npm_package_version` when npm runs the script, then `0.0.0`.
+ */
 export function getServerVersion(env: NodeJS.ProcessEnv = process.env): string {
-  return optionalEnv("npm_package_version", env) ?? "0.0.0";
+  return readVersionFromPackageJson() ?? optionalEnv("npm_package_version", env) ?? "0.0.0";
+}
+
+export function shouldPrintVersion(argv: string[]): boolean {
+  return argv.includes("--version") || argv.includes("-V");
 }
 
 /** When true, validates credentials and performs a single authenticated GET /users/me, then exits 0. */
