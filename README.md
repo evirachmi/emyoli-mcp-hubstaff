@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml/badge.svg)](https://github.com/evirachmi/emyoli-mcp-hubstaff/actions/workflows/ci.yml)
 
+**[Emyoli Technologies](https://emyoli.com)** — We’re a privately held software company: distributed teams across **Eastern Europe** (with focal points in **Romania** and **Moldova**), accountable offshore partners for organizations of many sizes. We emphasize responsiveness, transparency, and ethical delivery. Read more on **[About Emyoli](https://emyoli.com/aboutus/)**.
+
+---
+
 A small [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes **read** and **selected write** access to the [Hubstaff API v2](https://developer.hubstaff.com/docs/hubstaff_v2). Use it from Cursor, Claude Desktop, or any MCP-capable client to query organizations, projects, members, activities, and related reporting data, or to create manual time entries and manage projects/tasks where your token allows.
 
 This project is **not** affiliated with Hubstaff. Trademarks belong to their respective owners.
