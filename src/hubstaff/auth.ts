@@ -29,6 +29,8 @@ export class HubstaffAuth {
   private accessToken: string | undefined;
   private accessTokenExpiresAtUnix = 0;
   private refreshTokenValue: string;
+  /** Ensures parallel callers share one refresh (Hubstaff rate-limits refresh per token). */
+  private refreshInFlight: Promise<string> | null = null;
 
   constructor(
     refreshToken: string,
@@ -43,6 +45,18 @@ export class HubstaffAuth {
       return this.accessToken;
     }
 
+    if (this.refreshInFlight !== null) {
+      return this.refreshInFlight;
+    }
+
+    this.refreshInFlight = this.exchangeRefreshToken(fetchFn).finally(() => {
+      this.refreshInFlight = null;
+    });
+
+    return this.refreshInFlight;
+  }
+
+  private async exchangeRefreshToken(fetchFn: typeof fetch): Promise<string> {
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: this.refreshTokenValue,

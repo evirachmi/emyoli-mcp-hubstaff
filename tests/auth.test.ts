@@ -37,4 +37,35 @@ describe("HubstaffAuth", () => {
 
     await expect(auth.getAccessToken(fetchMock)).rejects.toThrow(/Hubstaff token refresh failed/);
   });
+
+  it("deduplicates concurrent refresh calls (single POST to token endpoint)", async () => {
+    let unblock!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+
+    const fetchMock = vi.fn(async () => {
+      await barrier;
+      return new Response(
+        JSON.stringify({
+          token_type: "bearer",
+          access_token: "access",
+          expires_in: 3600,
+          refresh_token: "next_refresh",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const auth = new HubstaffAuth("refresh_1");
+    const p1 = auth.getAccessToken(fetchMock);
+    const p2 = auth.getAccessToken(fetchMock);
+    const p3 = auth.getAccessToken(fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    unblock();
+    await expect(Promise.all([p1, p2, p3])).resolves.toEqual(["access", "access", "access"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
