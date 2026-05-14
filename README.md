@@ -139,34 +139,83 @@ Helper scripts:
 
 ## MCP client configuration
 
-Paths below assume you cloned to `/absolute/path/to/emyoli-mcp-hubstaff`.
+Use this section **after** the server works locally (`npm run build`, `node dist/index.js --health`, or Docker health/up). Paths below assume the repo lives at `/absolute/path/to/emyoli-mcp-hubstaff`.
 
-### Cursor
+### 1. Pick a transport
 
-Add an MCP server entry (Cursor Settings → MCP). Pick **either** Node **or** Docker.
+| Transport | When to use | You expose |
+| --- | --- | --- |
+| **stdio** | Cursor / Claude Desktop run the server as a **child process** on your machine | No TCP port; MCP over stdin/stdout |
+| **Streamable HTTP** | Detached Docker (`docker compose up -d mcp-hubstaff-http`), remote VMs, or clients that only speak HTTP MCP | `http://127.0.0.1:3333/mcp` on your host by default |
 
-**Node (local build)**
+Our HTTP endpoint does **not** ship authentication—keep it on localhost or behind your own proxy.
+
+---
+
+### 2. Cursor
+
+Official reference: [Model Context Protocol (MCP) — Cursor Docs](https://cursor.com/docs/context/mcp).
+
+**Where to put config**
+
+| Scope | File |
+| --- | --- |
+| Whole machine | `~/.cursor/mcp.json` |
+| This repo only | `.cursor/mcp.json` under the project root |
+
+Cursor merges both; project entries override global ones if names collide.
+
+**Steps**
+
+1. Run `npm run build` (host Node) **or** `docker compose build` (Docker).
+2. Edit `mcp.json` using one of the JSON snippets below (use **absolute** paths on disk).
+3. Save the file, then **reload MCP** or **restart Cursor** so it picks up changes.
+4. In Cursor: **Output** panel → channel **MCP Logs** if something fails to connect.
+5. In chat / Agent, tools appear under **Available Tools**; approve tool runs unless you enable auto-run.
+
+**Stdio — Node (local `dist/index.js`)**
 
 ```json
 {
   "mcpServers": {
     "hubstaff": {
+      "type": "stdio",
       "command": "node",
       "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
       "env": {
-        "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "your_token_here"
+        "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "${env:HUBSTAFF_PERSONAL_ACCESS_TOKEN}"
       }
     }
   }
 }
 ```
 
-**Docker Compose (stdio MCP)**
+Put the PAT in your shell environment, or replace the `${env:…}` value with a literal (avoid committing secrets).
+
+Optional: load variables from a file Cursor can see:
 
 ```json
 {
   "mcpServers": {
     "hubstaff": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
+      "envFile": "/absolute/path/to/emyoli-mcp-hubstaff/.env"
+    }
+  }
+}
+```
+
+(`envFile` is only for **stdio** servers in Cursor.)
+
+**Stdio — Docker Compose (`mcp-hubstaff-stdio`)**
+
+```json
+{
+  "mcpServers": {
+    "hubstaff": {
+      "type": "stdio",
       "command": "docker",
       "args": [
         "compose",
@@ -185,28 +234,100 @@ Add an MCP server entry (Cursor Settings → MCP). Pick **either** Node **or** D
 }
 ```
 
-Ensure Hubstaff credentials are available to Compose (repo-root `.env`, or exported in your shell before launching Cursor).
+Compose must see Hubstaff variables (repo-root `.env` for substitution, or exports in the environment that launches Cursor).
 
-**HTTP MCP** (after `docker compose up -d mcp-hubstaff-http`): configure your client to connect with **Streamable HTTP** to `http://localhost:3333/mcp` (or your chosen `MCP_HTTP_PUBLISH_PORT`). Exact UI fields depend on the MCP host—use MCP Inspector’s HTTP mode while iterating.
+**Remote — Streamable HTTP (after `docker compose up -d mcp-hubstaff-http`)**
 
-Run `docker compose build` once so the image exists.
+```json
+{
+  "mcpServers": {
+    "hubstaff-http": {
+      "url": "http://127.0.0.1:3333/mcp"
+    }
+  }
+}
+```
 
-### Claude Desktop
+Use your real host/port if you changed `MCP_HTTP_PUBLISH_PORT`. Add `"headers": { … }` only if you put a reverse proxy with auth in front of `/mcp`.
 
-Edit `claude_desktop_config.json` per Anthropic’s MCP documentation. Use the same **Node** or **Docker** patterns as above (`command` / `args` / optional `env`).
+---
 
-### MCP Inspector (interactive debugging)
+### 3. Claude Desktop
+
+Configure MCP servers in Claude Desktop’s JSON config (Anthropic documents this under their MCP / Desktop guides—search “Claude Desktop MCP configuration” in [Anthropic Docs](https://docs.anthropic.com/) if the filename moves between releases).
+
+Common locations:
+
+| OS | Typical path |
+| --- | --- |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+**Steps**
+
+1. Fully quit Claude Desktop (not just close the window).
+2. Edit the config file and add a `mcpServers` entry (same shapes as Cursor: `command` / `args` / `env` for stdio, or `url` for HTTP).
+3. Save and reopen Claude Desktop.
+
+**Stdio example (Node)**
+
+```json
+{
+  "mcpServers": {
+    "hubstaff": {
+      "command": "node",
+      "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
+      "env": {
+        "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "your_token_here"
+      }
+    }
+  }
+}
+```
+
+**HTTP example**
+
+```json
+{
+  "mcpServers": {
+    "hubstaff-http": {
+      "url": "http://127.0.0.1:3333/mcp"
+    }
+  }
+}
+```
+
+---
+
+### 4. Other apps (agents, bots, automation)
+
+Anything that acts as an **MCP host** can attach the same way:
+
+- **Stdio**: spawn `node …/dist/index.js` (or your Docker command) with Hubstaff env vars set; wire the process stdin/stdout to an MCP client implementation.
+- **HTTP**: point an MCP client at `http://<host>:3333/mcp` using **Streamable HTTP** (same transport Cursor lists as “Streamable HTTP”).
+
+Pointers:
+
+- [MCP client implementations](https://modelcontextprotocol.io/clients) — ecosystem list.
+- [`@modelcontextprotocol/sdk` client](https://www.npmjs.com/package/@modelcontextprotocol/sdk) — e.g. `StdioClientTransport` / `StreamableHTTPClientTransport` for custom agents or services.
+- Workflow tools (n8n, Zapier-style stacks, internal bots): look for an **“MCP”** or **“Model Context Protocol”** connector and supply either the **stdio command** block or the **HTTP MCP URL**, depending on what that product supports.
+
+Always scope Hubstaff tokens and network exposure to the smallest trusted surface (localhost, private network, or authenticated gateway).
+
+---
+
+### 5. MCP Inspector (quick manual test)
 
 ```bash
 npm run build
 npm run inspect
 ```
 
-(`inspect` runs `npx @modelcontextprotocol/inspector` against `./dist/index.js`; use an absolute path if you prefer calling `npx` directly.)
+Stdio: `inspect` runs `@modelcontextprotocol/inspector` against `./dist/index.js`; set `HUBSTAFF_PERSONAL_ACCESS_TOKEN` in the environment first.
 
-Load `HUBSTAFF_PERSONAL_ACCESS_TOKEN` into the inspector environment before connecting.
+HTTP: with `docker compose up -d mcp-hubstaff-http`, open the Inspector, choose **Streamable HTTP**, and use `http://127.0.0.1:3333/mcp` (labels vary slightly by Inspector version).
 
-After `docker compose up -d mcp-hubstaff-http`, connect the Inspector with **Streamable HTTP** to `http://localhost:3333/mcp` (exact wording varies by Inspector release).
+Run `docker compose build` once so Docker-based snippets work.
 
 ## Tools
 
