@@ -1,0 +1,56 @@
+{
+  "name": "mcp-hubstaff",
+  "version": "0.1.0",
+  "description": "Model Context Protocol (MCP) server for the Hubstaff API v2",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-hubstaff": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "inspect": "npx --yes @modelcontextprotocol/inspector@latest node ./dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "hubstaff",
+    "mcp",
+    "model-context-protocol",
+    "time-tracking",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/befaster/mcp-hubstaff.git"
+  },
+  "bugs": {
+    "url": "https://github.com/befaster/mcp-hubstaff/issues"
+  },
+  "homepage": "https://github.com/befaster/mcp-hubstaff#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^22.15.17",
+    "eslint": "^9.26.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^3.1.4"
+  }
+}
