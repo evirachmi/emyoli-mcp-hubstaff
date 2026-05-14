@@ -18,6 +18,14 @@ npm test
 npm run lint
 ```
 
+## Docker image
+
+After editing the Dockerfile or dependency graph, verify the image still builds:
+
+```bash
+docker compose build
+```
+
 ## Hubstaff credentials
 
 Integration checks against the live Hubstaff API require a valid personal access token.

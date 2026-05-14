@@ -1,0 +1,14 @@
+services:
+  mcp-hubstaff:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: emyoli-mcp-hubstaff:latest
+    stdin_open: true
+    tty: false
+    environment:
+      HUBSTAFF_PERSONAL_ACCESS_TOKEN: ${HUBSTAFF_PERSONAL_ACCESS_TOKEN:-}
+      HUBSTAFF_REFRESH_TOKEN: ${HUBSTAFF_REFRESH_TOKEN:-}
+      HUBSTAFF_CLIENT_ID: ${HUBSTAFF_CLIENT_ID:-}
+      HUBSTAFF_CLIENT_SECRET: ${HUBSTAFF_CLIENT_SECRET:-}
+      HUBSTAFF_API_BASE_URL: ${HUBSTAFF_API_BASE_URL:-}

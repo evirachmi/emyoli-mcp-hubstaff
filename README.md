@@ -13,10 +13,12 @@ This project is **not** affiliated with Hubstaff. Trademarks belong to their res
 - **OAuth refresh tokens** — optional support when you already exchange codes outside this binary.
 - **Automatic access-token refresh** — refresh tokens are rotated when Hubstaff returns new ones.
 - **Guardrailed escape hatch** — `hubstaff_api_get` only allows `organizations/*` and `users/*` prefixes.
+- **Docker** — run via `docker compose` without installing Node on the host (stdio-friendly flags documented below).
 
 ## Requirements
 
-- Node.js **20** or newer
+- **Local / Node:** Node.js **20** or newer, **or**
+- **Docker:** Docker Engine and Docker Compose v2
 - A Hubstaff account with API access and appropriate organization roles (many endpoints require manager/owner visibility).
 
 ## Quick start
@@ -53,6 +55,8 @@ npm install
 npm run build
 ```
 
+Prefer Docker instead of local Node? Jump to [Docker](#docker-recommended-if-you-do-not-want-node-on-the-host).
+
 ### 4. Smoke test (calls Hubstaff)
 
 ```bash
@@ -62,13 +66,36 @@ node dist/index.js --health
 
 You should see `mcp-hubstaff: health check OK` on stderr when `/users/me` succeeds.
 
+## Docker (recommended if you do not want Node on the host)
+
+From the repository root (where `docker-compose.yml` lives), create a `.env` file—Compose reads it automatically for variable substitution (same variables as [.env.example](./.env.example)).
+
+Build and sanity-check against Hubstaff:
+
+```bash
+docker compose build
+docker compose run --rm -i -T mcp-hubstaff node dist/index.js --health
+```
+
+Helper scripts:
+
+| Script | What it runs |
+| --- | --- |
+| `npm run docker:build` | `docker compose build` |
+| `npm run docker:health` | Health check inside a one-off container |
+| `npm run docker:run` | Starts the MCP server on stdio (used by MCP clients; see below) |
+
+**Why `-i -T`?** MCP speaks JSON-RPC over stdio. `docker compose run --rm -i -T` keeps stdin open for the host process while disabling a pseudo-TTY, which matches how most MCP hosts spawn subprocesses.
+
 ## MCP client configuration
 
 Paths below assume you cloned to `/absolute/path/to/emyoli-mcp-hubstaff`.
 
 ### Cursor
 
-Add an MCP server entry (Cursor Settings → MCP) similar to:
+Add an MCP server entry (Cursor Settings → MCP). Pick **either** Node **or** Docker.
+
+**Node (local build)**
 
 ```json
 {
@@ -83,24 +110,34 @@ Add an MCP server entry (Cursor Settings → MCP) similar to:
   }
 }
 ```
+
+**Docker Compose** (token in repo-root `.env`, or exported in your shell before launching Cursor)
+
+```json
+{
+  "mcpServers": {
+    "hubstaff": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "/absolute/path/to/emyoli-mcp-hubstaff/docker-compose.yml",
+        "run",
+        "--rm",
+        "-i",
+        "-T",
+        "mcp-hubstaff"
+      ]
+    }
+  }
+}
+```
+
+Run `docker compose build` once from that directory so the image exists.
 
 ### Claude Desktop
 
-Edit `claude_desktop_config.json` per Anthropic’s MCP documentation:
-
-```json
-{
-  "mcpServers": {
-    "hubstaff": {
-      "command": "node",
-      "args": ["/absolute/path/to/emyoli-mcp-hubstaff/dist/index.js"],
-      "env": {
-        "HUBSTAFF_PERSONAL_ACCESS_TOKEN": "your_token_here"
-      }
-    }
-  }
-}
-```
+Edit `claude_desktop_config.json` per Anthropic’s MCP documentation. Use the same **Node** or **Docker** patterns as above (`command` / `args` / optional `env`).
 
 ### MCP Inspector (interactive debugging)
 

@@ -18,6 +18,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "inspect": "npx --yes @modelcontextprotocol/inspector@latest node ./dist/index.js",
+    "docker:build": "docker compose build",
+    "docker:run": "docker compose run --rm -i -T mcp-hubstaff",
+    "docker:health": "docker compose run --rm -i -T mcp-hubstaff node dist/index.js --health",
     "prepublishOnly": "npm run build"
   },
   "engines": {
