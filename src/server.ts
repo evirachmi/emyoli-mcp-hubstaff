@@ -32,6 +32,16 @@ const activityFilterSchema = paginationSchema.extend({
   task_id: z.number().int().optional(),
 });
 
+// The screenshots endpoint requires time_slot[start]/time_slot[stop]; a call without them returns a
+// Hubstaff 400. Enforce required, non-empty timestamps here so the error surfaces at the MCP
+// boundary rather than downstream. (task_id is omitted: the endpoint silently ignores it.)
+const screenshotFilterSchema = paginationSchema.extend({
+  start_time: z.string().min(1),
+  stop_time: z.string().min(1),
+  user_id: z.number().int().optional(),
+  project_id: z.number().int().optional(),
+});
+
 export function validateHubstaffRelativePath(path: string): string {
   const trimmed = path.trim().replace(/^\/+/, "");
   if (trimmed.length === 0) {
@@ -232,12 +242,14 @@ export function registerHubstaffTools(server: McpServer, client: HubstaffClient)
   server.registerTool(
     "hubstaff_list_screenshots",
     {
-      description: "Lists screenshots captured for an organization (GET /organizations/{organization_id}/screenshots).",
-      inputSchema: organizationIdSchema.merge(activityFilterSchema),
+      description:
+        "Lists screenshots captured for an organization (GET /organizations/{organization_id}/screenshots). start_time/stop_time are REQUIRED and map to time_slot[start]/time_slot[stop]; user_id maps to user_ids. Paginate with page_start_id (the response returns pagination.next_page_start_id). The screenshots endpoint ignores task_id.",
+      inputSchema: organizationIdSchema.merge(screenshotFilterSchema),
     },
     async (args) => {
       try {
-        const { organization_id, ...query } = args;
+        const { organization_id, ...rest } = args;
+        const query = buildActivitiesListQuery(rest);
         const data = await client.getJson(`organizations/${String(organization_id)}/screenshots`, query);
         return jsonResult(data);
       } catch (error: unknown) {

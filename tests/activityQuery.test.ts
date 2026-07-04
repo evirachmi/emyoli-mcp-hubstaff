@@ -17,6 +17,18 @@ describe("buildActivitiesListQuery", () => {
       project_id: 1220754,
     });
   });
+
+  it("forwards page_start_id and task_id unchanged", () => {
+    expect(
+      buildActivitiesListQuery({
+        page_start_id: 555,
+        task_id: 42,
+      }),
+    ).toEqual({
+      page_start_id: 555,
+      task_id: 42,
+    });
+  });
 });
 
 describe("buildDailyActivitiesQuery", () => {
