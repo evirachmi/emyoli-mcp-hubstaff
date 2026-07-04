@@ -363,7 +363,7 @@ Run `docker compose build` once so Docker-based snippets work.
 
 Write tools call Hubstaff directly; confirm your **personal access token** or OAuth app includes the scopes Hubstaff documents for those routes (otherwise the API returns `403`).
 
-Query parameter names for **`hubstaff_list_activities`** / **`hubstaff_list_daily_activities`**: the tools accept `start_time`, `stop_time`, and `user_id` and map them to Hubstaff’s `time_slot[start]` / `time_slot[stop]`, or `date[start]` / `date[stop]`, and `user_ids`, as required by the API. For other tools and `hubstaff_api_get`, use the bracketed names from the official docs when applicable.
+Query parameter names: **`hubstaff_list_activities`** and **`hubstaff_list_screenshots`** accept `start_time`, `stop_time`, and `user_id` and map them to Hubstaff’s `time_slot[start]` / `time_slot[stop]` and `user_ids`; **`hubstaff_list_daily_activities`** maps the same inputs to `date[start]` / `date[stop]` and `user_ids`. For `hubstaff_list_screenshots`, `start_time` and `stop_time` are **required** (the endpoint returns `400` without them). For other tools and `hubstaff_api_get`, use the bracketed names from the official docs when applicable.
 
 ## Development scripts
 
